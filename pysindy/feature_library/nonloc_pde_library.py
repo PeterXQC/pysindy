@@ -143,6 +143,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         self.num_trajectories = 1
         self.differentiation_method = differentiation_method
         self.diff_kwargs = diff_kwargs
+        self.nonloc = True
 
 #         if function_names and (len(library_functions) != len(function_names)):
 #             raise ValueError(
@@ -217,6 +218,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         if (len(np.shape(spatiotemporal_grid)) == 1):
             self.temporal_grid = spatiotemporal_grid
             self.spatial_grid = None
+            self.nonloc = False
         else:
             shape = np.shape(spatiotemporal_grid)
 #             use spatial index 0
@@ -227,14 +229,9 @@ class NonlocPDELibrary(BaseFeatureLibrary):
             tindex[-1] = shape[-1]-1
             self.temporal_grid = spatiotemporal_grid[tuple(tindex)]
             
-        
-#             choose all spatial points
-            sindex = [slice(None)]*len(shape)
-#             use time index 0
-            sindex[-2] = 0
-#             choose all space axes
-            sindex[-1] = slice(0, len(shape)-2)
-            self.spatial_grid = spatiotemporal_grid[tuple(sindex)]
+            self.spatial_grid = spatiotemporal_grid[..., 0, :-1]
+        if np.shape(spatiotemporal_grid)[-1] == 2:
+            self.spatial_grid = self.spatial_grid.ravel()
             
         self.spatiotemporal_grid = spatiotemporal_grid
         print("ST:", np.shape(self.spatiotemporal_grid))
@@ -521,27 +518,21 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         
             
         print("xp_full size:", np.shape(xp_full))
-        print("x size:", np.shape(x_full))
-        print("spatial size:", np.shape(self.spatial_grid))
-        print("spatiotemporal_grid size:", np.shape(self.spatiotemporal_grid))
 
-
-#         non_loc = sample_test_space(spatiotemporal_grid, x)
-#         print("non_loc size:", np.shape(non_loc))
+        print("x_full size:", np.shape(x_full))
+        
+#         only run nonloc when a spatial grid is present
+        if self.nonloc:
+            non_loc = self.sample_test_space(self.spatiotemporal_grid, x_full)
+            print("non_loc size:", np.shape(non_loc))
 
         return xp_full
 
     def get_spatial_grid(self):
         return self.spatial_grid
 
-    
-
-    
-
-    
-
 #   nonlocal methods start here
-    def setup_subdomains(spatial_grid, K):
+    def setup_subdomains(self, spatial_grid, K):
         """Setup subdomains for nonlocal computation
 
             Output format: A list of ndim elements containing lists of bounds of subdomains. In a 2D
@@ -553,7 +544,6 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         bounds = []
     #     -1 to adjust for the last dimension, which indicates feature.
         for i in np.arange(np.array(spatial_grid).ndim-1):
-    #         does spatio-temporal grid have to have the same number of points in each spatial dimension?
             length = np.shape(spatial_grid)[1]
 
             if length//K[i] < 2:
@@ -571,7 +561,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
 
     '''A generalization from https://stackoverflow.com/questions/29142417/4d-position-from-1d-index'''
-    def nd_iterator(index, K):
+    def nd_iterator(self, index, K):
         '''
         index: the 1D index of the nd item to recover
         K: number of items per dimension, corresponding to each of the n dimensions.
@@ -579,6 +569,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         return:
         nd index of the item with 1D index to be "index"
         '''
+
         nd_index = [index % K[0]]
         dividor = 1
         remaining_index = index
@@ -589,7 +580,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
             nd_index.append(this_index)
         return nd_index
 
-    def subdomain_iterator(index, bounds, K):
+    def subdomain_iterator(self, index, bounds, K):
         '''
         bounds: subdomain dividor, in standard setup_subdomains format
         nd_index: nd index of a specific subdomain, in nd_iterator standard output format.
@@ -597,7 +588,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         return:
         boundary of that subdomain in standard nonlocal format.
         '''
-        nd_index = nd_iterator(index, K)
+        nd_index = self.nd_iterator(index, K)
         bound = []
         for i in np.arange(len(nd_index)):
             if nd_index[i] == 0:
@@ -607,28 +598,28 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
         return np.reshape(bound, (len(nd_index), 2))
 
-    def spatial_iterator(index, spatiotemporal_grid, K):
-        '''
-        bounds: subdomain dividor, in standard setup_subdomains format
-        nd_index: nd index of a specific subdomain, in nd_iterator standard output format.
+#     def spatial_iterator(index, spatiotemporal_grid, K):
+#         '''
+#         bounds: subdomain dividor, in standard setup_subdomains format
+#         nd_index: nd index of a specific subdomain, in nd_iterator standard output format.
 
-        return:
-        nd value of x at that index.
-        '''
-        nd_index = nd_iterator(index, K)
-    #     append time point
-        nd_index.append(0)
+#         return:
+#         nd value of x at that index.
+#         '''
+#         nd_index = self.nd_iterator(index, K)
+#     #     append time point
+#         nd_index.append(0)
 
-    #     compute slicing index for the last dimension
-        num_dim = len(np.shape(spatiotemporal_grid))-1
-    #     append last axis
-        nd_index.append(slice(0, num_dim-1, 1))
+#     #     compute slicing index for the last dimension
+#         num_dim = len(np.shape(spatiotemporal_grid))-1
+#     #     append last axis
+#         nd_index.append(slice(0, num_dim-1, 1))
 
-        return spatiotemporal_grid[tuple(nd_index)]
+#         return spatiotemporal_grid[tuple(nd_index)]
 
     #indicator function has been modified
     # modify it so it can kicks the points with not enough dimension to be zero
-    def indicator(x_points, endpts):
+    def indicator(self, x_points, endpts):
         '''
         if x value is inside the bound, return 1. Otherwise, return 0
 
@@ -659,7 +650,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         x = x.T
         return np.add(np.sign(np.subtract(np.sum(x, axis=1), len(endpts))), 1)
 
-    def get_1D_weight(grid, endpt):
+    def get_1D_weight(self, grid, endpt):
         '''
         Parameters: 
             grid: an 1D array that contains the value of the corresponding dimension of each grid points.
@@ -686,7 +677,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
         return weight
 
-    def get_full_weight(weights):
+    def get_full_weight(self, weights):
         '''
         weights: a list of lists, where each inner list is the 1D weight in a dimension. 
         '''
@@ -704,16 +695,16 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         overallShape = list(np.shape(spatiotemporal_grid)[:-1]) + [np.shape(X)[-1]]
         return X.reshape(overallShape)
 
-    def filterX(X, j, bound, t_ind):
+    def filterX(self, X, j, bound, t_ind):
     #     filter by feature j first
         index = [0]*len(np.shape(X))
-        for i in range(np.shape(bound)[0]):
-            index[i] = slice(bound[i][0], bound[i][1])
+        for i in np.arange(np.shape(bound)[0]):
+            index[i+1] = slice(bound[i][0], bound[i][1])
         index[-2] = t_ind
         index[-1] = j
         return X[tuple(index)]
 
-    def get_theta_nonloc(X, spatiotemporal_grid, j, k, kprime, bounds, K):
+    def get_theta_nonloc(self, X, spatiotemporal_grid, j, k, kprime, bounds, K):
         '''
         Parameters:
             spatiotemporal_grid: The spatiotemporal_grid that contains information about spatial and time points.
@@ -730,7 +721,6 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         num_t = np.shape(spatiotemporal_grid)[-2]
         num_x = np.prod(np.shape(spatiotemporal_grid)[:-2])
 
-
     #     Since all the spatiotemporal_grid contains indication, time and spatial dimensions, and there must be 1 time dimension
     #     the number of spatial is then given as following
         grid_ndim = len(np.shape(spatiotemporal_grid))-2
@@ -739,19 +729,19 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         x_shape = np.shape(spatiotemporal_grid)[:-2]
 
 
-        integral = np.zeros((num_x, num_t))
+        integral = np.zeros((int(num_x), int(num_t)))
 
     #     get coeff
-        coeff = np.zeros((num_x, num_t))
-        coeff_bounds = subdomain_iterator(k, bounds, K)
-        x_flat = np.zeros((2, 4096))
-        x_flat[0, :] = np.reshape(spatio_grid[:, :, 0], 4096)
-        x_flat[1, :] = np.reshape(spatio_grid[:, :, 1], 4096)
+        coeff = np.zeros((int(num_x), int(num_t)))
+        coeff_bounds = self.subdomain_iterator(k, bounds, K)
+        x_flat = np.zeros((len(np.shape(X))-3, num_x))
+        x_flat[0, :] = np.reshape(spatio_grid[..., 0], num_x)
+        x_flat[1, :] = np.reshape(spatio_grid[..., 1], num_x)
 
-        coeff = indicator(x_flat.T, coeff_bounds)
+        coeff = self.indicator(x_flat.T, coeff_bounds)
 
     #    get integral
-        integral_bounds = subdomain_iterator(kprime, bounds, K)
+        integral_bounds = self.subdomain_iterator(kprime, bounds, K)
         for t in np.arange(num_t):
             # find weights
             # All the 1D weights will be stored in a 2D matrix as cols
@@ -766,11 +756,11 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
         #         we now get the 1D grid by filtering by the index created
                 this_dim = spatiotemporal_grid[tuple(index)]
-                weight = get_1D_weight(this_dim, integral_bounds[i])
+                weight = self.get_1D_weight(this_dim, integral_bounds[i])
                 weights.append(weight)
 
-            W_F = get_full_weight(weights)
-            F = filterX(X, j, integral_bounds, t)
+            W_F = self.get_full_weight(weights)
+            F = self.filterX(X, j, integral_bounds, t)
 
             integral[:, t] = np.sum(np.multiply(W_F, F))
         np.shape(integral)
@@ -780,18 +770,17 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
         return theta_nonloc_p
 
-    def sample_test_space(spatiotemporal_grid, x):
-        spatial_grid = XYT[..., 0, :-1]
-        dims = spatial_grid.shape[:-1]
-        grid_ndim = len(dims)
-
+    def sample_test_space(self, spatiotemporal_grid, x):
+        x = np.array(x)
+        
+        grid_ndim = len(self.spatial_grid.shape[:-1])
     #     number of space points sampled
         n_samples_full = np.prod(np.shape(x)[:grid_ndim])
     #     number of features at each space point
         n_features = np.shape(x)[-1]-1
 
         K = [2]*grid_ndim
-        subdomain_bounds = setup_subdomains(spatial_grid, K)
+        subdomain_bounds = self.setup_subdomains(self.spatial_grid, K)
 
         res = []
 
@@ -800,5 +789,5 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         for j in np.arange(n_features):
             for k in np.arange(np.prod(K)):
                 for kprime in np.arange(np.prod(K)):
-                    res.append(get_theta_nonloc(x, spatiotemporal_grid, j, k, kprime, subdomain_bounds, K))
+                    res.append(self.get_theta_nonloc(x, spatiotemporal_grid, j, k, kprime, subdomain_bounds, K))
         return res
