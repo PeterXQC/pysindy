@@ -26,12 +26,14 @@ from .feature_library import FourierLibrary
 from .feature_library import IdentityLibrary
 from .feature_library import PolynomialLibrary
 from .feature_library import PDELibrary
+from .feature_library import NonlocPDELibrary
 from .feature_library import WeakPDELibrary
 from .feature_library import SINDyPILibrary
 from .feature_library import ParameterizedLibrary
 from .optimizers import BaseOptimizer
 from .optimizers import ConstrainedSR3
 from .optimizers import FROLS
+from .feature_library import nonloc_pde_library
 
 try:  # Waiting on PEP 690 to lazy import gurobipy
     from .optimizers import MIOSR

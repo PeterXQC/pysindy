@@ -14,7 +14,7 @@ from .base import x_sequence_or_item
 from pysindy.differentiation import FiniteDifference
 
 
-class PDELibrary(BaseFeatureLibrary):
+class NonlocPDELibrary(BaseFeatureLibrary):
     """Generate a PDE library with custom functions.
 
     Parameters
@@ -115,7 +115,7 @@ class PDELibrary(BaseFeatureLibrary):
         self,
         library_functions=[],
         derivative_order=0,
-        spatial_grid=None,
+        spatiotemporal_grid=None,
         temporal_grid=None,
         interaction_only=True,
         function_names=None,
@@ -130,7 +130,7 @@ class PDELibrary(BaseFeatureLibrary):
         is_uniform=None,
         periodic=None,
     ):
-        super(PDELibrary, self).__init__(
+        super(NonlocPDELibrary, self).__init__(
             library_ensemble=library_ensemble, ensemble_indices=ensemble_indices
         )
         self.functions = library_functions
@@ -144,71 +144,103 @@ class PDELibrary(BaseFeatureLibrary):
         self.differentiation_method = differentiation_method
         self.diff_kwargs = diff_kwargs
 
-        if function_names and (len(library_functions) != len(function_names)):
-            raise ValueError(
-                "library_functions and function_names must have the same"
-                " number of elements"
-            )
-        if derivative_order < 0:
-            raise ValueError("The derivative order must be >0")
+#         if function_names and (len(library_functions) != len(function_names)):
+#             raise ValueError(
+#                 "library_functions and function_names must have the same"
+#                 " number of elements"
+#             )
+#         if derivative_order < 0:
+#             raise ValueError("The derivative order must be >0")
 
-        if is_uniform is not None or periodic is not None:
-            # DeprecationWarning are ignored by default...
-            warnings.warn(
-                "is_uniform and periodic have been deprecated."
-                "in favor of differetiation_method and diff_kwargs.",
-                UserWarning,
-            )
+#         if is_uniform is not None or periodic is not None:
+#             # DeprecationWarning are ignored by default...
+#             warnings.warn(
+#                 "is_uniform and periodic have been deprecated."
+#                 "in favor of differetiation_method and diff_kwargs.",
+#                 UserWarning,
+#             )
+#         print("New PDE lib in use.")
+#         if (spatial_grid is not None and derivative_order == 0) or (
+#             spatial_grid is None and derivative_order != 0 and temporal_grid is None
+#         ):
+#             raise ValueError(
+#                 "Spatial grid and the derivative order must be "
+#                 "defined at the same time if temporal_grid is not being used."
+#             )
 
-        if (spatial_grid is not None and derivative_order == 0) or (
-            spatial_grid is None and derivative_order != 0 and temporal_grid is None
-        ):
-            raise ValueError(
-                "Spatial grid and the derivative order must be "
-                "defined at the same time if temporal_grid is not being used."
-            )
+#         if temporal_grid is None and implicit_terms:
+#             raise ValueError(
+#                 "temporal_grid parameter must be specified if implicit_terms "
+#                 " = True (i.e. if you are using SINDy-PI for PDEs)."
+#             )
+#         elif not implicit_terms and temporal_grid is not None:
+#             raise ValueError(
+#                 "temporal_grid parameter is specified only if implicit_terms "
+#                 " = True (i.e. if you are using SINDy-PI for PDEs)."
+#             )
+#         if spatial_grid is not None and spatial_grid.ndim == 1:
+#             spatial_grid = spatial_grid[:, np.newaxis]
 
-        if temporal_grid is None and implicit_terms:
-            raise ValueError(
-                "temporal_grid parameter must be specified if implicit_terms "
-                " = True (i.e. if you are using SINDy-PI for PDEs)."
-            )
-        elif not implicit_terms and temporal_grid is not None:
-            raise ValueError(
-                "temporal_grid parameter is specified only if implicit_terms "
-                " = True (i.e. if you are using SINDy-PI for PDEs)."
-            )
-        if spatial_grid is not None and spatial_grid.ndim == 1:
-            spatial_grid = spatial_grid[:, np.newaxis]
+#         if temporal_grid is not None and temporal_grid.ndim != 1:
+#             raise ValueError("temporal_grid parameter must be 1D numpy array.")
+#         if temporal_grid is not None or spatial_grid is not None:
+#             if spatial_grid is None:
+#                 spatiotemporal_grid = temporal_grid
+#                 spatial_grid = np.array([])
+#             elif temporal_grid is None:
+#                 spatiotemporal_grid = spatial_grid[
+#                     ..., np.newaxis, :
+#                 ]  # append a fake time axis
+#             else:
+#                 spatiotemporal_grid = np.zeros(
+#                     (
+#                         *spatial_grid.shape[:-1],
+#                         len(temporal_grid),
+#                         spatial_grid.shape[-1] + 1,
+#                     )
+#                 )
+#                 for ax in range(spatial_grid.ndim - 1):
+#                     spatiotemporal_grid[..., ax] = spatial_grid[..., ax][
+#                         ..., np.newaxis
+#                     ]
+#                 spatiotemporal_grid[..., -1] = temporal_grid
+#         else:
+#             spatiotemporal_grid = np.array([])
+#             spatial_grid = np.array([])
 
-        if temporal_grid is not None and temporal_grid.ndim != 1:
-            raise ValueError("temporal_grid parameter must be 1D numpy array.")
-        if temporal_grid is not None or spatial_grid is not None:
-            if spatial_grid is None:
-                spatiotemporal_grid = temporal_grid
-                spatial_grid = np.array([])
-            elif temporal_grid is None:
-                spatiotemporal_grid = spatial_grid[
-                    ..., np.newaxis, :
-                ]  # append a fake time axis
-            else:
-                spatiotemporal_grid = np.zeros(
-                    (
-                        *spatial_grid.shape[:-1],
-                        len(temporal_grid),
-                        spatial_grid.shape[-1] + 1,
-                    )
-                )
-                for ax in range(spatial_grid.ndim - 1):
-                    spatiotemporal_grid[..., ax] = spatial_grid[..., ax][
-                        ..., np.newaxis
-                    ]
-                spatiotemporal_grid[..., -1] = temporal_grid
+        if (spatiotemporal_grid is None):
+            raise ValueError(
+                "Spatiotemporal_grid must be present."
+            )
+            
+#         In this case, only temporal grid present.
+        if (len(np.shape(spatiotemporal_grid)) == 1):
+            self.temporal_grid = spatiotemporal_grid
+            self.spatial_grid = None
         else:
-            spatiotemporal_grid = np.array([])
-            spatial_grid = np.array([])
-
-        self.spatial_grid = spatial_grid
+            shape = np.shape(spatiotemporal_grid)
+#             use spatial index 0
+            tindex = [0]*len(shape)
+#             choose all time points
+            tindex[-2] = slice(None)
+#             choose the correct time axis
+            tindex[-1] = shape[-1]-1
+            self.temporal_grid = spatiotemporal_grid[tuple(tindex)]
+            
+        
+#             choose all spatial points
+            sindex = [slice(None)]*len(shape)
+#             use time index 0
+            sindex[-2] = 0
+#             choose all space axes
+            sindex[-1] = slice(0, len(shape)-2)
+            self.spatial_grid = spatiotemporal_grid[tuple(sindex)]
+            
+        self.spatiotemporal_grid = spatiotemporal_grid
+        print("ST:", np.shape(self.spatiotemporal_grid))
+        print("S:", np.shape(self.spatial_grid))
+        print("T:", np.shape(self.temporal_grid))
+        
 
         # list of derivatives
         indices = ()
@@ -485,7 +517,288 @@ class PDELibrary(BaseFeatureLibrary):
             xp_full.append(xp)
         if self.library_ensemble:
             xp_full = self._ensemble(xp_full)
+            
+        
+            
+        print("xp_full size:", np.shape(xp_full))
+        print("x size:", np.shape(x_full))
+        print("spatial size:", np.shape(self.spatial_grid))
+        print("spatiotemporal_grid size:", np.shape(self.spatiotemporal_grid))
+
+
+#         non_loc = sample_test_space(spatiotemporal_grid, x)
+#         print("non_loc size:", np.shape(non_loc))
+
         return xp_full
 
     def get_spatial_grid(self):
         return self.spatial_grid
+
+    
+
+    
+
+    
+
+#   nonlocal methods start here
+    def setup_subdomains(spatial_grid, K):
+        """Setup subdomains for nonlocal computation
+
+            Output format: A list of ndim elements containing lists of bounds of subdomains. In a 2D
+            case, an example would be [[[0, 1], [2, 4], [5, 9]], [[0, 4], [5, 12]]].
+        """
+    #       spatial grid is this 2D tensor that stores the grid. 
+    #       We split each dimension into K (mostly) equally sized subdomains, where K is a parameter. 
+    #       There will be a total of K^ndim subdomains 
+        bounds = []
+    #     -1 to adjust for the last dimension, which indicates feature.
+        for i in np.arange(np.array(spatial_grid).ndim-1):
+    #         does spatio-temporal grid have to have the same number of points in each spatial dimension?
+            length = np.shape(spatial_grid)[1]
+
+            if length//K[i] < 2:
+    #             replace this with warning or break point
+                print("Warning: too many subdomains created in axis", i)
+
+            subdomain_length = length//K[i]
+            remain = length % K[i]
+            size = np.zeros(K[i]) + subdomain_length
+            size[:remain] += 1
+            bound = np.cumsum(size)
+            bound = [int(s) for s in bound]
+            bounds.append(bound)
+        return bounds
+
+
+    '''A generalization from https://stackoverflow.com/questions/29142417/4d-position-from-1d-index'''
+    def nd_iterator(index, K):
+        '''
+        index: the 1D index of the nd item to recover
+        K: number of items per dimension, corresponding to each of the n dimensions.
+
+        return:
+        nd index of the item with 1D index to be "index"
+        '''
+        nd_index = [index % K[0]]
+        dividor = 1
+        remaining_index = index
+        for i in np.arange(len(K)-1):
+            remaining_index -= nd_index[i]*dividor
+            dividor *= K[i]
+            this_index = remaining_index // dividor % K[i+1]
+            nd_index.append(this_index)
+        return nd_index
+
+    def subdomain_iterator(index, bounds, K):
+        '''
+        bounds: subdomain dividor, in standard setup_subdomains format
+        nd_index: nd index of a specific subdomain, in nd_iterator standard output format.
+
+        return:
+        boundary of that subdomain in standard nonlocal format.
+        '''
+        nd_index = nd_iterator(index, K)
+        bound = []
+        for i in np.arange(len(nd_index)):
+            if nd_index[i] == 0:
+                bound.append([0, bounds[i][0]-1])
+            else:
+                bound.append([bounds[i][nd_index[i]-1], bounds[i][nd_index[i]]-1])
+
+        return np.reshape(bound, (len(nd_index), 2))
+
+    def spatial_iterator(index, spatiotemporal_grid, K):
+        '''
+        bounds: subdomain dividor, in standard setup_subdomains format
+        nd_index: nd index of a specific subdomain, in nd_iterator standard output format.
+
+        return:
+        nd value of x at that index.
+        '''
+        nd_index = nd_iterator(index, K)
+    #     append time point
+        nd_index.append(0)
+
+    #     compute slicing index for the last dimension
+        num_dim = len(np.shape(spatiotemporal_grid))-1
+    #     append last axis
+        nd_index.append(slice(0, num_dim-1, 1))
+
+        return spatiotemporal_grid[tuple(nd_index)]
+
+    #indicator function has been modified
+    # modify it so it can kicks the points with not enough dimension to be zero
+    def indicator(x_points, endpts):
+        '''
+        if x value is inside the bound, return 1. Otherwise, return 0
+
+        Require:
+            endpts: (left_bound, right_bound).
+            x, left_bound, right_bound must have the same dimension
+
+        Parameters: 
+
+                x: m x (n+1) vector representing the index of point to check (Time dimension should be excluded)
+
+                endpts: 2d (n x 2) array of index. First dimension is all the spatial dimensions, and second dimension are 
+                        left and right bound of the subdomain in terms of index
+
+        `return: 
+                1 x n matrix that consist of 1 and 0's indicating whether the point is inside the subdomain or not
+        '''
+        x = np.copy(x_points)
+        x = x.T
+
+        # iterate through each dimensions
+        for i in np.arange(np.shape(endpts)[0]):
+            upper_limit = endpts[i][1]
+            lower_limit = endpts[i][0]
+            x[i] = np.multiply(np.abs(x[i] - 0.5*(upper_limit+lower_limit))<=0.5*(upper_limit-lower_limit), 1)
+
+        # Transpose back to original shape
+        x = x.T
+        return np.add(np.sign(np.subtract(np.sum(x, axis=1), len(endpts))), 1)
+
+    def get_1D_weight(grid, endpt):
+        '''
+        Parameters: 
+            grid: an 1D array that contains the value of the corresponding dimension of each grid points.
+
+            endpts: 1 x 2 array 
+                the first element is the left endpoints of this dimensions in terms of index,
+                second element is the left endpoints of this dimensions in terms of index,
+        '''
+
+        if endpt[0] >= endpt[1]:
+            raise ValueError("Illegal Endpoints.")
+
+    #     initialize a bunch of 0,
+        weight = np.zeros(endpt[1]-endpt[0])
+
+    #     find the index at which we enter Omega_k in this axis
+        start = endpt[0]
+        end = endpt[1]
+
+    #     start and end index has different equation for weight, so we do those first
+        weight[0] = 1/2*(grid[start+1]-grid[start])
+        weight[-1] = 1/2*(grid[end]-grid[end-1])
+        weight[1:-1] = np.array([0.5 * (grid[(start+2):(end)] - grid[start:(end-2)])])
+
+        return weight
+
+    def get_full_weight(weights):
+        '''
+        weights: a list of lists, where each inner list is the 1D weight in a dimension. 
+        '''
+        ndim = len(weights)
+        W_F = np.array(weights[0])
+        for w in np.arange(ndim-1)+1:
+            index = [slice(None)]*(w+1)
+            index[-1] = np.newaxis
+            W_F = W_F[tuple(index)] * np.array(weights[w])
+
+        return W_F
+
+    # Methods to filter data matrix X
+    def retrieve_data_mat(spatiotemporal_grid, X):
+        overallShape = list(np.shape(spatiotemporal_grid)[:-1]) + [np.shape(X)[-1]]
+        return X.reshape(overallShape)
+
+    def filterX(X, j, bound, t_ind):
+    #     filter by feature j first
+        index = [0]*len(np.shape(X))
+        for i in range(np.shape(bound)[0]):
+            index[i] = slice(bound[i][0], bound[i][1])
+        index[-2] = t_ind
+        index[-1] = j
+        return X[tuple(index)]
+
+    def get_theta_nonloc(X, spatiotemporal_grid, j, k, kprime, bounds, K):
+        '''
+        Parameters:
+            spatiotemporal_grid: The spatiotemporal_grid that contains information about spatial and time points.
+            j: the index of u that we are looking for
+            k: the index of subdomain to be used by the indicator function
+            kprime: the index of the subdomain to be used as boundary of integral
+            bounds: boundary of each subdomain correspond to each dimension in terms of indexing. 
+
+        return: 
+            vector Theta^nonloc_p
+        '''
+        spatio_grid = spatiotemporal_grid[..., 0, :-1]
+    #     get number and space and time points
+        num_t = np.shape(spatiotemporal_grid)[-2]
+        num_x = np.prod(np.shape(spatiotemporal_grid)[:-2])
+
+
+    #     Since all the spatiotemporal_grid contains indication, time and spatial dimensions, and there must be 1 time dimension
+    #     the number of spatial is then given as following
+        grid_ndim = len(np.shape(spatiotemporal_grid))-2
+
+    #     construct shape of x
+        x_shape = np.shape(spatiotemporal_grid)[:-2]
+
+
+        integral = np.zeros((num_x, num_t))
+
+    #     get coeff
+        coeff = np.zeros((num_x, num_t))
+        coeff_bounds = subdomain_iterator(k, bounds, K)
+        x_flat = np.zeros((2, 4096))
+        x_flat[0, :] = np.reshape(spatio_grid[:, :, 0], 4096)
+        x_flat[1, :] = np.reshape(spatio_grid[:, :, 1], 4096)
+
+        coeff = indicator(x_flat.T, coeff_bounds)
+
+    #    get integral
+        integral_bounds = subdomain_iterator(kprime, bounds, K)
+        for t in np.arange(num_t):
+            # find weights
+            # All the 1D weights will be stored in a 2D matrix as cols
+            weights = []
+            for i in np.arange(grid_ndim):
+                # +2 to account for the time and indication dimension
+                index = [0]*(grid_ndim+2)
+                # Time is always the second to last dimension, which is filtered here
+                index[-2] = t
+                index[i] = slice(None)
+                index[-1] = i
+
+        #         we now get the 1D grid by filtering by the index created
+                this_dim = spatiotemporal_grid[tuple(index)]
+                weight = get_1D_weight(this_dim, integral_bounds[i])
+                weights.append(weight)
+
+            W_F = get_full_weight(weights)
+            F = filterX(X, j, integral_bounds, t)
+
+            integral[:, t] = np.sum(np.multiply(W_F, F))
+        np.shape(integral)
+
+    #     final product
+        theta_nonloc_p = (coeff * integral.T).T
+
+        return theta_nonloc_p
+
+    def sample_test_space(spatiotemporal_grid, x):
+        spatial_grid = XYT[..., 0, :-1]
+        dims = spatial_grid.shape[:-1]
+        grid_ndim = len(dims)
+
+    #     number of space points sampled
+        n_samples_full = np.prod(np.shape(x)[:grid_ndim])
+    #     number of features at each space point
+        n_features = np.shape(x)[-1]-1
+
+        K = [2]*grid_ndim
+        subdomain_bounds = setup_subdomains(spatial_grid, K)
+
+        res = []
+
+        tot_iter = n_features * np.prod(K) * np.prod(K)
+
+        for j in np.arange(n_features):
+            for k in np.arange(np.prod(K)):
+                for kprime in np.arange(np.prod(K)):
+                    res.append(get_theta_nonloc(x, spatiotemporal_grid, j, k, kprime, subdomain_bounds, K))
+        return res

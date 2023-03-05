@@ -6,6 +6,7 @@ from .generalized_library import GeneralizedLibrary
 from .identity_library import IdentityLibrary
 from .parameterized_library import ParameterizedLibrary
 from .pde_library import PDELibrary
+from .nonloc_pde_library import NonlocPDELibrary
 from .polynomial_library import PolynomialLibrary
 from .sindy_pi_library import SINDyPILibrary
 from .weak_pde_library import WeakPDELibrary
@@ -20,6 +21,7 @@ __all__ = [
     "PolynomialLibrary",
     "PDELibrary",
     "WeakPDELibrary",
+    "NonlocPDELibrary",
     "SINDyPILibrary",
-    "ParameterizedLibrary",
+    "ParameterizedLibrary"
 ]
