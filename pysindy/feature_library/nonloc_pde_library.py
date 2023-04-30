@@ -215,10 +215,11 @@ class NonlocPDELibrary(BaseFeatureLibrary):
             )
             
 #         In this case, only temporal grid present.
-        if (len(np.shape(spatiotemporal_grid)) == 1):
+        if (len(np.shape(spatiotemporal_grid)) <= 2):
             self.temporal_grid = spatiotemporal_grid
             self.spatial_grid = None
             self.nonloc = False
+            print("Only temporal grid present. Will not perform nonlocal computation.")
         else:
             shape = np.shape(spatiotemporal_grid)
 #             use spatial index 0
@@ -512,19 +513,16 @@ class NonlocPDELibrary(BaseFeatureLibrary):
                 library_idx += n_library_terms * self.num_derivatives * n_features
             xp = AxesArray(xp, comprehend_axes(xp))
             xp_full.append(xp)
+            
+            if self.nonloc:
+                non_loc = self.sample_test_space(self.spatiotemporal_grid, x)
+
         if self.library_ensemble:
             xp_full = self._ensemble(xp_full)
             
-        
-            
-        print("xp_full size:", np.shape(xp_full))
+        # if self.nonloc:
+        #     non_loc = self.sample_test_space(self.spatiotemporal_grid, x_full)
 
-        print("x_full size:", np.shape(x_full))
-        
-#         only run nonloc when a spatial grid is present
-        if self.nonloc:
-            non_loc = self.sample_test_space(self.spatiotemporal_grid, x_full)
-            print("non_loc size:", np.shape(non_loc))
 
         return xp_full
 
@@ -544,7 +542,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         bounds = []
     #     -1 to adjust for the last dimension, which indicates feature.
         for i in np.arange(np.array(spatial_grid).ndim-1):
-            length = np.shape(spatial_grid)[1]
+            length = np.shape(spatial_grid)[i]
 
             if length//K[i] < 2:
     #             replace this with warning or break point
@@ -619,36 +617,33 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
     #indicator function has been modified
     # modify it so it can kicks the points with not enough dimension to be zero
-    def indicator(self, x_points, endpts):
+    def indicator(self, x_shape, K, subdomain_bounds, index):
         '''
-        if x value is inside the bound, return 1. Otherwise, return 0
-
+        if x value is inside the k-th subdomain, return 1. Otherwise, return 0
+    
         Require:
             endpts: (left_bound, right_bound).
             x, left_bound, right_bound must have the same dimension
-
+    
         Parameters: 
-
+    
                 x: m x (n+1) vector representing the index of point to check (Time dimension should be excluded)
-
+    
                 endpts: 2d (n x 2) array of index. First dimension is all the spatial dimensions, and second dimension are 
                         left and right bound of the subdomain in terms of index
-
+    
         `return: 
                 1 x n matrix that consist of 1 and 0's indicating whether the point is inside the subdomain or not
         '''
-        x = np.copy(x_points)
-        x = x.T
-
-        # iterate through each dimensions
-        for i in np.arange(np.shape(endpts)[0]):
-            upper_limit = endpts[i][1]
-            lower_limit = endpts[i][0]
-            x[i] = np.multiply(np.abs(x[i] - 0.5*(upper_limit+lower_limit))<=0.5*(upper_limit-lower_limit), 1)
-
-        # Transpose back to original shape
-        x = x.T
-        return np.add(np.sign(np.subtract(np.sum(x, axis=1), len(endpts))), 1)
+    
+        # Set up an array the same size as all the x points. 
+        ind = np.zeros(x_shape)
+        ones = self.subdomain_iterator(index, subdomain_bounds, K)
+        index = [0]*len(K)
+        for i in np.arange(len(K)):
+            index[i] = slice(ones[i][0], ones[i][1]+1)
+        ind[tuple(index)] = 1
+        return ind
 
     def get_1D_weight(self, grid, endpt):
         '''
@@ -663,8 +658,8 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         if endpt[0] >= endpt[1]:
             raise ValueError("Illegal Endpoints.")
 
-    #     initialize a bunch of 0,
-        weight = np.zeros(endpt[1]-endpt[0])
+    #     initialize a bunch of 0, +1 to include both endpoints
+        weight = np.zeros(endpt[1]-endpt[0]+1)
 
     #     find the index at which we enter Omega_k in this axis
         start = endpt[0]
@@ -673,7 +668,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
     #     start and end index has different equation for weight, so we do those first
         weight[0] = 1/2*(grid[start+1]-grid[start])
         weight[-1] = 1/2*(grid[end]-grid[end-1])
-        weight[1:-1] = np.array([0.5 * (grid[(start+2):(end)] - grid[start:(end-2)])])
+        weight[1:-1] = np.array([0.5 * (grid[(start+2):(end)+1] - grid[start:(end-2)+1])])
 
         return weight
 
@@ -698,8 +693,8 @@ class NonlocPDELibrary(BaseFeatureLibrary):
     def filterX(self, X, j, bound, t_ind):
     #     filter by feature j first
         index = [0]*len(np.shape(X))
-        for i in np.arange(np.shape(bound)[0]):
-            index[i+1] = slice(bound[i][0], bound[i][1])
+        for i in np.arange(len(bound)):
+            index[i] = slice(bound[i][0], bound[i][1]+1)
         index[-2] = t_ind
         index[-1] = j
         return X[tuple(index)]
@@ -727,20 +722,22 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
     #     construct shape of x
         x_shape = np.shape(spatiotemporal_grid)[:-2]
-
-
-        integral = np.zeros((int(num_x), int(num_t)))
-
+        
     #     get coeff
-        coeff = np.zeros((int(num_x), int(num_t)))
-        coeff_bounds = self.subdomain_iterator(k, bounds, K)
-        x_flat = np.zeros((len(np.shape(X))-3, num_x))
-        x_flat[0, :] = np.reshape(spatio_grid[..., 0], num_x)
-        x_flat[1, :] = np.reshape(spatio_grid[..., 1], num_x)
+        # coeff = np.zeros((int(num_x), int(num_t)))
+        # coeff_bounds = self.subdomain_iterator(k, bounds, K)
+        
+#         -2 to account for time and index/feature axis.
+        # x_flat = np.zeros((len(np.shape(X))-2, num_x))
+        # for i in np.arange(len(np.shape(X))-2):
+        #     x_flat[i, :] = np.reshape(spatio_grid[..., i], num_x)
 
-        coeff = self.indicator(x_flat.T, coeff_bounds)
+        coeff = self.indicator(x_shape, K, bounds, k)
+        # print(np.shape(coeff))
 
     #    get integral
+        integral = np.zeros((x_shape + (num_t,)))
+        # print(np.shape(integral))
         integral_bounds = self.subdomain_iterator(kprime, bounds, K)
         for t in np.arange(num_t):
             # find weights
@@ -758,36 +755,46 @@ class NonlocPDELibrary(BaseFeatureLibrary):
                 this_dim = spatiotemporal_grid[tuple(index)]
                 weight = self.get_1D_weight(this_dim, integral_bounds[i])
                 weights.append(weight)
-
+                
             W_F = self.get_full_weight(weights)
             F = self.filterX(X, j, integral_bounds, t)
-
-            integral[:, t] = np.sum(np.multiply(W_F, F))
-        np.shape(integral)
+            
+            integral[..., t] = np.sum(np.multiply(W_F, F))
 
     #     final product
-        theta_nonloc_p = (coeff * integral.T).T
+        theta_nonloc_p = (coeff[..., None] * integral)
 
-        return theta_nonloc_p
+        return np.reshape(theta_nonloc_p, np.shape(spatiotemporal_grid)[:-1])
 
     def sample_test_space(self, spatiotemporal_grid, x):
         x = np.array(x)
         
-        grid_ndim = len(self.spatial_grid.shape[:-1])
+#         make sure shape complies with assumption.
+        if (len(np.shape(self.spatial_grid)) == 1):
+            self.spatial_grid = self.spatial_grid.reshape(-1, 1)
+            
+        grid_ndim = len(self.spatial_grid.shape) - 1
+        
     #     number of space points sampled
         n_samples_full = np.prod(np.shape(x)[:grid_ndim])
     #     number of features at each space point
-        n_features = np.shape(x)[-1]-1
+        n_features = np.shape(x)[-1]
 
         K = [2]*grid_ndim
         subdomain_bounds = self.setup_subdomains(self.spatial_grid, K)
-
+        
+        print(np.shape(x))
+        print(np.shape(self.spatial_grid))
+        print(n_samples_full)
+        print(n_features)
+        print(K)
+        print(subdomain_bounds)
+        
         res = []
-
-        tot_iter = n_features * np.prod(K) * np.prod(K)
 
         for j in np.arange(n_features):
             for k in np.arange(np.prod(K)):
                 for kprime in np.arange(np.prod(K)):
                     res.append(self.get_theta_nonloc(x, spatiotemporal_grid, j, k, kprime, subdomain_bounds, K))
-        return res
+#         lastly, use stack to move the axis of append to the last axis to match the shape of xp_full.
+        return np.stack(res, axis=-1)
