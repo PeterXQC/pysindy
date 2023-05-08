@@ -129,6 +129,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         diff_kwargs={},
         is_uniform=None,
         periodic=None,
+        K = None
     ):
         super(NonlocPDELibrary, self).__init__(
             library_ensemble=library_ensemble, ensemble_indices=ensemble_indices
@@ -208,7 +209,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 #         else:
 #             spatiotemporal_grid = np.array([])
 #             spatial_grid = np.array([])
-
+            
         if (spatiotemporal_grid is None):
             raise ValueError(
                 "Spatiotemporal_grid must be present."
@@ -270,6 +271,16 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         self.spatiotemporal_grid = AxesArray(
             spatiotemporal_grid, comprehend_axes(spatiotemporal_grid)
         )
+        
+        if ((K is None) and (self.nonloc)):
+            grid_ndim = len(self.spatial_grid.shape)
+            
+            if grid_ndim != 1:
+                grid_ndim -= 1
+                
+            self.K = [2]*grid_ndim
+            print(self.K)
+            print("Subdomain count not specified. Default of two subdomains per dimension will be used.")
 
     @staticmethod
     def _combinations(n_features, n_args, interaction_only):
@@ -399,8 +410,18 @@ class NonlocPDELibrary(BaseFeatureLibrary):
         # If there is a constant term, add 1 to n_output_features
         if self.include_bias:
             n_output_features += 1
+            
+        print("n_output_features_ w/out nonloc", n_output_features)
+            
+        # If criteria for nonlocal computation is fulfilled, compute nonlocal part.
+        n_nonloc_features = 0
+        if self.nonloc:
+            n_nonloc_features = np.prod(self.K)*np.shape(x_full)[-1]*np.prod(self.K)
+            print("Predicted Num nonloc feature:", n_nonloc_features)
 
-        self.n_output_features_ = n_output_features
+        self.n_output_features_ = n_output_features + n_nonloc_features
+        
+        print("self.n_output_features_", self.n_output_features_)
 
         # required to generate the function names
         self.get_feature_names()
@@ -512,17 +533,19 @@ class NonlocPDELibrary(BaseFeatureLibrary):
                 )
                 library_idx += n_library_terms * self.num_derivatives * n_features
             xp = AxesArray(xp, comprehend_axes(xp))
+            print("xp without nonloc", np.shape(xp))
+            if self.nonloc:
+                non_loc = self.sample_test_space(self.spatiotemporal_grid, x, self.K)
+                xp = np.concatenate((xp, non_loc), axis=-1)
+                print("xp with nonloc", np.shape(xp))
+                
             xp_full.append(xp)
             
-            if self.nonloc:
-                non_loc = self.sample_test_space(self.spatiotemporal_grid, x)
+            
+            
 
         if self.library_ensemble:
             xp_full = self._ensemble(xp_full)
-            
-        # if self.nonloc:
-        #     non_loc = self.sample_test_space(self.spatiotemporal_grid, x_full)
-
 
         return xp_full
 
@@ -766,7 +789,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
         return np.reshape(theta_nonloc_p, np.shape(spatiotemporal_grid)[:-1])
 
-    def sample_test_space(self, spatiotemporal_grid, x):
+    def sample_test_space(self, spatiotemporal_grid, x, K):
         x = np.array(x)
         
 #         make sure shape complies with assumption.
@@ -780,7 +803,6 @@ class NonlocPDELibrary(BaseFeatureLibrary):
     #     number of features at each space point
         n_features = np.shape(x)[-1]
 
-        K = [2]*grid_ndim
         subdomain_bounds = self.setup_subdomains(self.spatial_grid, K)
         
         print(np.shape(x))
