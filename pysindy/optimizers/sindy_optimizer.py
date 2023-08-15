@@ -51,12 +51,17 @@ class SINDyOptimizer(BaseEstimator):
         self.unbias = unbias
 
     def fit(self, x, y):
-
+        mask = np.isnan(x)
+        np.save('xinfit.npy', x)
+        
         x, y = drop_nan_samples(
             AxesArray(x, {"ax_sample": 0, "ax_coord": 1}),
             AxesArray(y, {"ax_sample": 0, "ax_coord": 1}),
         )
+        
+        mask = np.isnan(x)
 
+        
         self.optimizer.fit(x, y)
         if not hasattr(self.optimizer, "coef_"):
             raise AttributeError("optimizer has no attribute coef_")

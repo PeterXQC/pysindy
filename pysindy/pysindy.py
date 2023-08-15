@@ -412,7 +412,7 @@ class SINDy(BaseEstimator):
             warnings.filterwarnings(action, category=LinAlgWarning)
             warnings.filterwarnings(action, category=UserWarning)
             self.model.fit(x, x_dot)
-
+            
         # New version of sklearn changes attribute name
         if float(__version__[:3]) >= 1.0:
             self.n_features_in_ = self.model.steps[0][1].n_features_in_

@@ -282,7 +282,7 @@ class NonlocPDELibrary(BaseFeatureLibrary):
 
                 self.K = [2]*grid_ndim
                 # print(self.K)
-                # print("Subdomain count not specified. Default of two subdomains per dimension will be used.")
+                print("Subdomain count not specified. Default of two subdomains per dimension will be used.")
             else:
                 self.K = K
             
@@ -547,17 +547,12 @@ class NonlocPDELibrary(BaseFeatureLibrary):
                 )
                 library_idx += n_library_terms * self.num_derivatives * n_features
             xp = AxesArray(xp, comprehend_axes(xp))
-            # print("xp without nonloc", np.shape(xp))
             
             if self.nonloc:
                 non_loc = self.sample_test_space(self.spatiotemporal_grid, x, self.K)
                 xp[..., -self.n_nonloc_features:] = non_loc
-                # print("xp with nonloc", np.shape(xp))
                 
             xp_full.append(xp)
-            
-            
-            
 
         if self.library_ensemble:
             xp_full = self._ensemble(xp_full)
